@@ -157,7 +157,10 @@ bool ExistePosicaoMagicQualquerInstancia(long magic)
 
 string PrefixoLockCicloMagic(long magic)
 {
-   return "AR100_" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + _Symbol + "_" + IntegerToString(magic) + "_";
+   string bruto=StringFormat("%I64d|%s|%s|%I64d",
+                             AccountInfoInteger(ACCOUNT_LOGIN),
+                             AccountInfoString(ACCOUNT_SERVER),_Symbol,magic);
+   return "AR36LK_"+Base36FIX304(HashTextoFIX304(bruto),10)+"_";
 }
 
 string ChaveLockA0(EstadoLado &estado)

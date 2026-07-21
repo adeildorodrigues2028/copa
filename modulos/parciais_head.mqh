@@ -464,7 +464,9 @@ void InicializarMarcoHistoricoZero()
    }
    else
    {
-      // Migra primeiro a chave FIX310 (conta/simbolo/Magics), depois a chave mais antiga FIX196.
+      // V36: migracao permitida somente quando a chave antiga tambem contem
+      // conta, simbolo e o mesmo par de Magics. A chave FIX196 nao possui Magic
+      // e poderia importar o marco financeiro de outro robo.
       string simboloLegado=_Symbol;
       StringReplace(simboloLegado,".",""); StringReplace(simboloLegado,"#",""); StringReplace(simboloLegado,"-","");
       string baseLegado=StringFormat("AR100_HZ_%I64d_%s_%d_%d",
@@ -473,17 +475,10 @@ void InicializarMarcoHistoricoZero()
       if(StringLen(baseLegado)>54) baseLegado=StringSubstr(baseLegado,0,54);
       string horaLegada=baseLegado+"_T";
       string ticketLegado=baseLegado+"_K";
-      string horaMuitoAntiga=StringFormat("AR100_FIX196_HIST_TIME_%I64d_%s",AccountInfoInteger(ACCOUNT_LOGIN),_Symbol);
-      string ticketMuitoAntigo=StringFormat("AR100_FIX196_HIST_TICKET_%I64d_%s",AccountInfoInteger(ACCOUNT_LOGIN),_Symbol);
       if(GlobalVariableCheck(horaLegada) && GlobalVariableCheck(ticketLegado))
       {
          g_historicoMarcoZero=(datetime)GlobalVariableGet(horaLegada);
          g_historicoTicketZero=(ulong)GlobalVariableGet(ticketLegado);
-      }
-      else if(GlobalVariableCheck(horaMuitoAntiga) && GlobalVariableCheck(ticketMuitoAntigo))
-      {
-         g_historicoMarcoZero=(datetime)GlobalVariableGet(horaMuitoAntiga);
-         g_historicoTicketZero=(ulong)GlobalVariableGet(ticketMuitoAntigo);
       }
       else
       {

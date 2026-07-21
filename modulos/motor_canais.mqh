@@ -356,6 +356,15 @@ bool CanaisExisteQualquerPosicao()
 bool CanaisEnviarEntrada(const bool compra,const datetime candle)
 {
    long magic=compra?InpMagicCompraCanais:InpMagicVendaCanais;
+   // V36: motor de canais tambem preserva lados opostos e Magics exclusivos.
+   if(InpMagicCompraCanais<=0 || InpMagicVendaCanais<=0 ||
+      InpMagicCompraCanais==InpMagicVendaCanais ||
+      (compra && magic!=InpMagicCompraCanais) || (!compra && magic!=InpMagicVendaCanais))
+   {
+      CanaisLog("V36_LADO_BLOQUEADO",StringFormat("A deve ser BUY e B deve ser SELL | compra=%s | magic=%I64d | A=%I64d | B=%I64d",
+                 compra?"SIM":"NAO",magic,InpMagicCompraCanais,InpMagicVendaCanais),true);
+      return false;
+   }
    if((compra && g_canaisUltimaEntradaCompraCandle==candle) || (!compra && g_canaisUltimaEntradaVendaCandle==candle))
       return false;
    ulong t; double v,p;

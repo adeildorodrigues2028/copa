@@ -236,19 +236,12 @@ int HashTextoCurtoAB(string texto)
 
 string ChaveGlobalCurtaAB()
 {
-   string lista = IntegerToString((int)MagicPainelAAtual()) + "," + IntegerToString((int)MagicPainelBAtual());
-   string simbolo = _Symbol;
-   StringReplace(simbolo, ".", "");
-   StringReplace(simbolo, "#", "");
-   StringReplace(simbolo, "-", "");
-   StringReplace(simbolo, " ", "");
-   if(StringLen(simbolo) > 8)
-      simbolo = StringSubstr(simbolo, 0, 8);
-   long login = (long)AccountInfoInteger(ACCOUNT_LOGIN);
-   if(login < 0)
-      login = -login;
-   login = login % 100000;
-   return "AR100_" + IntegerToString(login) + "_" + simbolo + "_" + IntegerToString(HashTextoCurtoAB(lista)) + "_";
+   // V36: evita colisao entre contas e servidores no mesmo terminal.
+   string bruto=StringFormat("%I64d|%s|%s|%d|%d",
+                             AccountInfoInteger(ACCOUNT_LOGIN),
+                             AccountInfoString(ACCOUNT_SERVER),_Symbol,
+                             (int)MagicPainelAAtual(),(int)MagicPainelBAtual());
+   return "AR36_"+Base36FIX304(HashTextoFIX304(bruto),10)+"_";
 }
 
 string ChaveParABCompletadoFIX274()

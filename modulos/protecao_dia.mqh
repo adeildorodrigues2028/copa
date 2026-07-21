@@ -273,17 +273,28 @@ string ChaveProtecaoDiaEscalonadaFIX333(string campo)
 
 void PersistirProtecaoDiaEscalonadaFIX333()
 {
+   if(!MathIsValidNumber(g_mestre.melhorResultadoDiaTotal) || !MathIsValidNumber(g_mestre.defesaDiaTotal))
+   {
+      Print("[COPA_AR100][V36][PROTECAO_NAO_GRAVADA] valor financeiro invalido.");
+      return;
+   }
+   GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("V"),0.0);
    GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("DATA"),(double)g_mestre.diaProtecaoRef);
    GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("MELHOR"),g_mestre.melhorResultadoDiaTotal);
    GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("DEFESA"),g_mestre.defesaDiaTotal);
    GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("ATIVA"),g_mestre.diaLucroProtegido ? 1.0 : 0.0);
    GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("DISPAROU"),g_mestre.diaProtecaoDisparada ? 1.0 : 0.0);
+   GlobalVariableSet(ChaveProtecaoDiaEscalonadaFIX333("V"),(double)TimeCurrent());
+   GlobalVariablesFlush();
 }
 
 void RestaurarProtecaoDiaEscalonadaFIX333(datetime hoje)
 {
    string chaveData=ChaveProtecaoDiaEscalonadaFIX333("DATA");
    datetime dataSalva=(GlobalVariableCheck(chaveData) ? (datetime)GlobalVariableGet(chaveData) : 0);
+   string chaveVersao=ChaveProtecaoDiaEscalonadaFIX333("V");
+   if(GlobalVariableCheck(chaveVersao) && GlobalVariableGet(chaveVersao)<=0.0)
+      dataSalva=0; // escrita interrompida; nunca restaurar conjunto parcial
    if(dataSalva!=hoje)
    {
       g_mestre.diaProtecaoRef=hoje;
@@ -297,6 +308,18 @@ void RestaurarProtecaoDiaEscalonadaFIX333(datetime hoje)
    g_mestre.diaProtecaoRef=hoje;
    g_mestre.melhorResultadoDiaTotal=GlobalVariableCheck(ChaveProtecaoDiaEscalonadaFIX333("MELHOR")) ? GlobalVariableGet(ChaveProtecaoDiaEscalonadaFIX333("MELHOR")) : 0.0;
    g_mestre.defesaDiaTotal=GlobalVariableCheck(ChaveProtecaoDiaEscalonadaFIX333("DEFESA")) ? GlobalVariableGet(ChaveProtecaoDiaEscalonadaFIX333("DEFESA")) : 0.0;
+   if(!MathIsValidNumber(g_mestre.melhorResultadoDiaTotal) || !MathIsValidNumber(g_mestre.defesaDiaTotal) ||
+      g_mestre.melhorResultadoDiaTotal<0.0 || g_mestre.defesaDiaTotal<0.0 ||
+      g_mestre.defesaDiaTotal>g_mestre.melhorResultadoDiaTotal)
+   {
+      g_mestre.melhorResultadoDiaTotal=0.0;
+      g_mestre.defesaDiaTotal=0.0;
+      g_mestre.diaLucroProtegido=false;
+      g_mestre.diaProtecaoDisparada=false;
+      Print("[COPA_AR100][V36][PROTECAO_INVALIDA] checkpoint descartado e reconstruido.");
+      PersistirProtecaoDiaEscalonadaFIX333();
+      return;
+   }
    g_mestre.diaLucroProtegido=(GlobalVariableCheck(ChaveProtecaoDiaEscalonadaFIX333("ATIVA")) && GlobalVariableGet(ChaveProtecaoDiaEscalonadaFIX333("ATIVA"))>0.5);
    g_mestre.diaProtecaoDisparada=(GlobalVariableCheck(ChaveProtecaoDiaEscalonadaFIX333("DISPAROU")) && GlobalVariableGet(ChaveProtecaoDiaEscalonadaFIX333("DISPAROU"))>0.5);
 }

@@ -264,17 +264,17 @@ double LucroAbertoPosicaoSelecionada(long tipo)
 
 
 
-// FIX458: o Magic operacional continua sendo apenas o par atual.
-// Para o HISTORICO financeiro do painel, também reconhecemos o par anterior
-// usado hoje, para não apagar ganhos já realizados quando o usuário troca o Magic.
+// V36: isolamento financeiro estrito. O historico aceita somente o par atual.
+// Magics antigos jamais sao somados automaticamente: uma migracao, quando
+// desejada, precisa ser explicita e auditada fora do motor financeiro.
 bool MagicHistoricoCompraFIX458(long magic)
 {
-   return (magic==MagicPainelAAtual() || magic==222050 || magic==326050);
+   return (magic==MagicPainelAAtual());
 }
 
 bool MagicHistoricoVendaFIX458(long magic)
 {
-   return (magic==MagicPainelBAtual() || magic==222051 || magic==326051);
+   return (magic==MagicPainelBAtual());
 }
 
 bool MagicPertenceHistoricoFinanceiroFIX458(long magic)
@@ -442,15 +442,11 @@ string TextoGrupoMagicsTotalAB()
 
 string ChaveSnapshotTotalABPrefixo()
 {
-   string lista = IntegerToString((int)MagicPainelAAtual()) + "," + IntegerToString((int)MagicPainelBAtual());
-   if(StringLen(lista) > 24)
-      lista = StringSubstr(lista, 0, 24);
-   string simbolo = _Symbol;
-   StringReplace(simbolo, ".", "");
-   StringReplace(simbolo, "#", "");
-   StringReplace(simbolo, "-", "");
-   StringReplace(simbolo, " ", "");
-   return "AR100AB_" + IntegerToString((long)AccountInfoInteger(ACCOUNT_LOGIN)) + "_" + simbolo + "_" + lista + "_";
+   string bruto=StringFormat("%I64d|%s|%s|%d|%d",
+                             AccountInfoInteger(ACCOUNT_LOGIN),
+                             AccountInfoString(ACCOUNT_SERVER),_Symbol,
+                             (int)MagicPainelAAtual(),(int)MagicPainelBAtual());
+   return "AR36AB_"+Base36FIX304(HashTextoFIX304(bruto),10)+"_";
 }
 
 void InvalidarSnapshotTotalABFIX292()
@@ -490,6 +486,10 @@ bool LerSnapshotTotalAB(double &qtdCompra,
    qtdVenda = GlobalVariableGet(kQV);
    abertoCompra = GlobalVariableGet(kAC);
    abertoVenda = GlobalVariableGet(kAV);
+   if(!MathIsValidNumber(qtdCompra) || !MathIsValidNumber(qtdVenda) ||
+      !MathIsValidNumber(abertoCompra) || !MathIsValidNumber(abertoVenda) ||
+      qtdCompra<0.0 || qtdVenda<0.0)
+      return false;
    totalBruto = qtdCompra + qtdVenda;
    abertoTotal = abertoCompra + abertoVenda;
    return true;

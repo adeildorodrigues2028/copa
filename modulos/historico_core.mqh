@@ -40,15 +40,8 @@ bool DealEhDepoisDoMarcoHistoricoZero(ulong deal)
 
 bool AplicarMarcoHistoricoZero(datetime &inicio, datetime fim, HistoricoPeriodo &h, string nome)
 {
-   // FIX349: os periodos historicos devem atravessar a troca de vencimento.
-   // O marco continua valendo para DIA/OPERACAO; somente ONTEM/7D/15D/30D/TUDO
-   // leem os deals anteriores da mesma familia WIN/WDO e dos mesmos Magics A/B.
-   // FIX386: os botoes civis devem ler o periodo civil completo.
-   // O marco HIST_ZERO serve apenas para o modo sessao/operacao atual e nao pode cortar o historico de HOJE.
-   bool periodoRolloverFIX349=(nome=="DIA" || nome=="ONTEM" || nome=="7D" || nome=="15D" ||
-                              nome=="30D" || nome=="TUDO");
-   if(InpHistoricoUnificarVencimentosFIX347 && periodoRolloverFIX349)
-      return true;
+   // V36: o marco da identidade vale para TODOS os periodos. Ele atravessa
+   // vencimentos, mas nunca atravessa a criacao de um novo par de Magics.
    if(g_historicoMarcoZero <= 0)
       InicializarMarcoHistoricoZero();
    if(fim < g_historicoMarcoZero)
@@ -108,6 +101,15 @@ void SalvarControleDiaFIX310(bool forcar)
    datetime agora=AgoraServidorHistorico();
    if(!forcar && g_ultimaPersistenciaDiaFIX310>0 && (agora-g_ultimaPersistenciaDiaFIX310)<30)
       return;
+   if(!MathIsValidNumber(g_abertoBaseDiaCompraFIX310) || !MathIsValidNumber(g_abertoBaseDiaVendaFIX310) ||
+      !MathIsValidNumber(g_saldoOntemCompraFIX310) || !MathIsValidNumber(g_saldoOntemVendaFIX310) ||
+      !MathIsValidNumber(g_ultimoAbertoCompraFIX310) || !MathIsValidNumber(g_ultimoAbertoVendaFIX310))
+   {
+      Print("[COPA_AR100][V36][CHECKPOINT_REJEITADO] controle diario contem valor financeiro invalido.");
+      return;
+   }
+   // V=0 marca transacao em andamento; V>0 somente depois de todos os campos.
+   GlobalVariableSet(ChaveControleDiaFIX310("V"),0.0);
    GlobalVariableSet(ChaveControleDiaFIX310("D"),(double)g_diaFinanceiroRefFIX310);
    GlobalVariableSet(ChaveControleDiaFIX310("BC"),g_abertoBaseDiaCompraFIX310);
    GlobalVariableSet(ChaveControleDiaFIX310("BV"),g_abertoBaseDiaVendaFIX310);
@@ -116,6 +118,8 @@ void SalvarControleDiaFIX310(bool forcar)
    GlobalVariableSet(ChaveControleDiaFIX310("UC"),g_ultimoAbertoCompraFIX310);
    GlobalVariableSet(ChaveControleDiaFIX310("UV"),g_ultimoAbertoVendaFIX310);
    GlobalVariableSet(ChaveControleDiaFIX310("UH"),(double)g_ultimaFotoAbertoFIX310);
+   GlobalVariableSet(ChaveControleDiaFIX310("V"),(double)agora);
+   if(forcar) GlobalVariablesFlush();
    g_ultimaPersistenciaDiaFIX310=agora;
 }
 
@@ -130,6 +134,9 @@ void InicializarControleDiaFIX310()
       usarLegado=true;
    string chaveD=usarLegado ? ChaveControleDiaLegadaFIX311("D") : chaveDia;
    bool carregou=GlobalVariableCheck(chaveD);
+   string chaveVersao=ChaveControleDiaFIX310("V");
+   if(!usarLegado && GlobalVariableCheck(chaveVersao) && GlobalVariableGet(chaveVersao)<=0.0)
+      carregou=false; // checkpoint interrompido: reconstruir em vez de usar dados parciais
    if(carregou)
    {
       g_diaFinanceiroRefFIX310=(datetime)GlobalVariableGet(chaveD);
@@ -147,6 +154,19 @@ void InicializarControleDiaFIX310()
       if(GlobalVariableCheck(kUC)) g_ultimoAbertoCompraFIX310=GlobalVariableGet(kUC);
       if(GlobalVariableCheck(kUV)) g_ultimoAbertoVendaFIX310=GlobalVariableGet(kUV);
       if(GlobalVariableCheck(kUH)) g_ultimaFotoAbertoFIX310=(datetime)GlobalVariableGet(kUH);
+      if(!MathIsValidNumber(g_abertoBaseDiaCompraFIX310) || !MathIsValidNumber(g_abertoBaseDiaVendaFIX310) ||
+         !MathIsValidNumber(g_saldoOntemCompraFIX310) || !MathIsValidNumber(g_saldoOntemVendaFIX310) ||
+         !MathIsValidNumber(g_ultimoAbertoCompraFIX310) || !MathIsValidNumber(g_ultimoAbertoVendaFIX310))
+      {
+         g_abertoBaseDiaCompraFIX310=AbertoAtualLadoFIX310(LADO_COMPRA);
+         g_abertoBaseDiaVendaFIX310=AbertoAtualLadoFIX310(LADO_VENDA);
+         g_saldoOntemCompraFIX310=0.0;
+         g_saldoOntemVendaFIX310=0.0;
+         g_ultimoAbertoCompraFIX310=g_abertoBaseDiaCompraFIX310;
+         g_ultimoAbertoVendaFIX310=g_abertoBaseDiaVendaFIX310;
+         g_ultimaFotoAbertoFIX310=agora;
+         Print("[COPA_AR100][V36][CHECKPOINT_INVALIDO] valores diarios reconstruidos com seguranca.");
+      }
    }
    else
    {
@@ -362,6 +382,35 @@ void AuditoriaHistoricoMagicFIX311(bool forcar)
    g_statusFinanceiroFIX313=StringFormat("SEGURO %s | ultimo fator %.8f | corrigidos %d | sem base %d | bruto %.2f | usado %.2f | saidas5m %d",
                                          unidadeOk?"OK":"FALHA",g_fatorFinanceiroServidorFIX313,corrigidosFinanceiro,semBaseFinanceiro,
                                          somaBrutaFinanceiro,somaSeguraFinanceiro,saidasRecentes);
+   // V36: inventario explicito para provar, no Experts, quantos deals foram
+   // aceitos pelo par atual e quantos foram rejeitados como outro Magic.
+   int dealsAceitosV36=0,dealsOutroMagicV36=0;
+   double financeiroAceitoV36=0.0;
+   if(HistorySelect(g_historicoMarcoZero,agora+86400))
+   {
+      for(int dV36=0;dV36<HistoryDealsTotal();dV36++)
+      {
+         ulong dealV36=HistoryDealGetTicket(dV36);
+         if(dealV36==0 || !DealEhDepoisDoMarcoHistoricoZero(dealV36)) continue;
+         if(!SimboloAceitoHistoricoFIX347(HistoryDealGetString(dealV36,DEAL_SYMBOL))) continue;
+         long tipoV36=HistoryDealGetInteger(dealV36,DEAL_TYPE);
+         if(tipoV36!=DEAL_TYPE_BUY && tipoV36!=DEAL_TYPE_SELL) continue;
+         long magicV36=(long)HistoryDealGetInteger(dealV36,DEAL_MAGIC);
+         if(MagicPertenceHistoricoFinanceiroFIX458(magicV36))
+         {
+            dealsAceitosV36++;
+            financeiroAceitoV36+=ResultadoDealHistorico(dealV36);
+         }
+         else
+            dealsOutroMagicV36++;
+      }
+   }
+   if(forcar)
+      PrintFormat("[COPA_AR100][V36][AUDITORIA_MAGIC] conta=%I64d | servidor=%s | simbolo=%s | A=%d | B=%d | id=%s | marco=%s | aceitos=%d | rejeitados_outro_magic=%d | financeiro_aceito=%.2f",
+                  AccountInfoInteger(ACCOUNT_LOGIN),AccountInfoString(ACCOUNT_SERVER),_Symbol,
+                  (int)MagicCompraAtual(),(int)MagicVendaAtual(),g_identidadeGeracaoFIX304,
+                  TimeToString(g_historicoMarcoZero,TIME_DATE|TIME_SECONDS),
+                  dealsAceitosV36,dealsOutroMagicV36,NormalizeDouble(financeiroAceitoV36,2));
    string novo=StringFormat("%s %d/%d",falhou==0?"APROVADO":"FALHOU",passou,passou+falhou);
    bool mudou=(novo!=g_auditoriaHistStatusFIX311 || falhas!=g_auditoriaHistFalhasFIX311);
    g_auditoriaHistPassFIX311=passou;
@@ -788,14 +837,11 @@ void CalcularHistoricoPeriodoCoreFIX311(datetime inicio, datetime fim, Historico
    datetime inicioSelecao=0;
    if(fim<inicio || !HistorySelect(inicioSelecao,fim)) return;
    int total=HistoryDealsTotal();
-   bool periodoRolloverFIX349=(nome=="ONTEM" || nome=="7D" || nome=="15D" ||
-                              nome=="30D" || nome=="TUDO");
-   bool ignorarMarcoRolloverFIX347=(InpHistoricoUnificarVencimentosFIX347 && periodoRolloverFIX349);
    for(int i=0;i<total;i++)
    {
       ulong deal=HistoryDealGetTicket(i);
       if(deal==0) continue;
-      if(!ignorarMarcoRolloverFIX347 && !DealEhDepoisDoMarcoHistoricoZero(deal)) continue;
+      if(!DealEhDepoisDoMarcoHistoricoZero(deal)) continue;
       if(!SimboloAceitoHistoricoFIX347(HistoryDealGetString(deal,DEAL_SYMBOL))) continue;
       long magicDeal=(long)HistoryDealGetInteger(deal,DEAL_MAGIC);
       if(magicFiltro>0)

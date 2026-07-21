@@ -36,13 +36,17 @@ string MontarPerfilTresFiltrosFIX372(string f1,string f2,string f3)
 
 string PerfilJanelaOuPadraoFIX372(int indice,string perfilJanela,string perfilPadrao)
 {
-   bool janelaAtiva=!CampoFiltroNuloFIX372(perfilJanela);
+   // FIX379: a janela e a entrada A0 possuem filtros independentes.
+   // Sem filtro escolhido, somente o filtro da janela fica LIVRE; o A0 e
+   // validado separadamente pelo motor de entradas.
+   bool janelaComFiltro=!CampoFiltroNuloFIX372(perfilJanela);
+   string perfilEfetivo=(janelaComFiltro ? perfilJanela : "LIVRE");
    if(indice>=0 && indice<4)
    {
-      g_origemFiltroJanelaFIX372[indice]=(janelaAtiva ? "JANELA" : "PADRAO A0");
-      g_perfilFiltroJanelaFIX372[indice]=(janelaAtiva ? perfilJanela : perfilPadrao);
+      g_origemFiltroJanelaFIX372[indice]=(janelaComFiltro ? "JANELA" : "JANELA LIVRE");
+      g_perfilFiltroJanelaFIX372[indice]=perfilEfetivo;
    }
-   return (janelaAtiva ? perfilJanela : perfilPadrao);
+   return perfilEfetivo;
 }
 
 void PrepararParametrosMestreFIX372()

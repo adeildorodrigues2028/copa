@@ -1,6 +1,60 @@
 #ifndef COPA_PREFLIGHT_STOPS_ORDENS_MQH
 #define COPA_PREFLIGHT_STOPS_ORDENS_MQH
 
+bool TipoOrdemCompraV36(long tipo)
+{
+   return (tipo==ORDER_TYPE_BUY || tipo==ORDER_TYPE_BUY_LIMIT ||
+           tipo==ORDER_TYPE_BUY_STOP || tipo==ORDER_TYPE_BUY_STOP_LIMIT);
+}
+
+bool TipoOrdemVendaV36(long tipo)
+{
+   return (tipo==ORDER_TYPE_SELL || tipo==ORDER_TYPE_SELL_LIMIT ||
+           tipo==ORDER_TYPE_SELL_STOP || tipo==ORDER_TYPE_SELL_STOP_LIMIT);
+}
+
+bool AuditarLadosOpostosV36(string &motivo)
+{
+   motivo="";
+   long magicA=MagicCompraAtual(),magicB=MagicVendaAtual();
+   if(magicA<=0 || magicB<=0 || magicA==magicB)
+   {
+      motivo=StringFormat("MAGICS INVALIDOS OU IGUAIS: A=%I64d B=%I64d",magicA,magicB);
+      return false;
+   }
+   for(int i=PositionsTotal()-1;i>=0;i--)
+   {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      long magic=(long)PositionGetInteger(POSITION_MAGIC);
+      long tipo=PositionGetInteger(POSITION_TYPE);
+      if((magic==magicA && tipo!=POSITION_TYPE_BUY) ||
+         (magic==magicB && tipo!=POSITION_TYPE_SELL))
+      {
+         motivo=StringFormat("POSICAO INVERTIDA TICKET=%I64u MAGIC=%I64d TIPO=%s",
+                             ticket,magic,tipo==POSITION_TYPE_BUY?"BUY":"SELL");
+         return false;
+      }
+   }
+   for(int o=OrdersTotal()-1;o>=0;o--)
+   {
+      ulong ordem=OrderGetTicket(o);
+      if(ordem==0) continue;
+      if(OrderGetString(ORDER_SYMBOL)!=_Symbol) continue;
+      long magic=(long)OrderGetInteger(ORDER_MAGIC);
+      long tipo=OrderGetInteger(ORDER_TYPE);
+      if((magic==magicA && TipoOrdemVendaV36(tipo)) ||
+         (magic==magicB && TipoOrdemCompraV36(tipo)))
+      {
+         motivo=StringFormat("ORDEM PENDENTE INVERTIDA TICKET=%I64u MAGIC=%I64d TIPO=%d",
+                             ordem,magic,(int)tipo);
+         return false;
+      }
+   }
+   return true;
+}
+
 bool ExistePosicaoDirecaoErradaMagicFIX288(long magic, ENUM_LADO_ROBO ladoEsperado, string &detalhe)
 {
    detalhe="";
@@ -269,6 +323,25 @@ bool ValidarPreflightEntradaFIX342(EstadoLado &estado,MqlTradeRequest &req,strin
 {
    motivo="";
    ZeroMemory(check);
+   // V36: trava final e independente da estrategia. A somente BUY; B somente SELL.
+   string motivoAuditoriaV36="";
+   g_ladosOpostosOKV36=AuditarLadosOpostosV36(motivoAuditoriaV36);
+   g_ladosOpostosStatusV36=(g_ladosOpostosOKV36 ? "APROVADO: A=BUY E B=SELL" : "BLOQUEADO: "+motivoAuditoriaV36);
+   if(!g_ladosOpostosOKV36)
+   {
+      motivo="V36 AUDITORIA DE LADOS: "+motivoAuditoriaV36;
+      return false;
+   }
+   long magicEsperadoV36=(estado.lado==LADO_COMPRA ? MagicCompraAtual() : MagicVendaAtual());
+   ENUM_ORDER_TYPE tipoEsperadoV36=(estado.lado==LADO_COMPRA ? ORDER_TYPE_BUY : ORDER_TYPE_SELL);
+   if(estado.magic!=magicEsperadoV36 || (long)req.magic!=magicEsperadoV36 || req.type!=tipoEsperadoV36)
+   {
+      motivo=StringFormat("V36 DIRECAO RECUSADA | lado=%s | estadoMagic=%I64d | reqMagic=%I64d | tipo=%d | esperadoMagic=%I64d | esperadoTipo=%d",
+                          estado.lado==LADO_COMPRA?"A/BUY":"B/SELL",estado.magic,(long)req.magic,
+                          (int)req.type,magicEsperadoV36,(int)tipoEsperadoV36);
+      Print("[COPA_AR100][V36][ORDEM_LADO_BLOQUEADA] ",motivo);
+      return false;
+   }
    bool livreProtegidaDemoFIX350=(g_contaDemo && PrimeiraOrdemLivreProtegidaFIX314() && EntradaDiretaDemoEfetivaFIX302());
    // FIX346: bloqueio central cobre A0 normal, A0 livre de teste e A1-A4.
    // Saidas e protecoes nao passam por este preflight e permanecem autorizadas.

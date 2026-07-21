@@ -508,7 +508,18 @@ void GerenciarEstadoLado(EstadoLado &estado)
          return;
       }
       bool liberarFiltrosOpostoFIX257 = (entradaOpostaObrigatoriaFIX257 && InpHeadOpostoIgnoraFiltrosA0FIX257);
-      bool filtrosOk = a0TesteLivre || liberarFiltrosOpostoFIX257 || ValidarFiltros(janela.filtros, estado.lado);
+
+      // FIX379: prioridade e independencia dos filtros da entrada inicial.
+      // 1) a janela valida somente os filtros escolhidos na propria janela;
+      // 2) a entrada A0 valida depois o seu proprio perfil;
+      // 3) perfil sem filtros e LIVRE e, portanto, nao bloqueia.
+      // A0 em USAR=NAO nao pode desligar um filtro escolhido na janela.
+      // O cenario tecnico SEM_FILTROS ja transforma o perfil da janela em LIVRE.
+      bool filtrosJanelaOk = liberarFiltrosOpostoFIX257 || ValidarFiltros(janela.filtros, estado.lado);
+      RegraFiltros filtrosEntradaA0 = ParseFiltrosDaLinha(
+         NormalizarFiltrosHumanizados(FiltroEfetivoAuditoriaFIX302(InpPerfilFiltrosAuditoriaFIX302)));
+      bool filtrosEntradaA0Ok = a0TesteLivre || liberarFiltrosOpostoFIX257 || ValidarFiltros(filtrosEntradaA0, estado.lado);
+      bool filtrosOk = (filtrosJanelaOk && filtrosEntradaA0Ok);
       bool filtrosLiberamA0 = (filtrosOk || (hedgeRecuperacao && !InpHedgeExigirFiltroEntrada));
       string motivoFiltroA0 = a0TesteLivre
                               ? "A0_TESTE_LIVRE"
@@ -516,8 +527,14 @@ void GerenciarEstadoLado(EstadoLado &estado)
                                  ? "FIX257_COMPLETA_PAR_AB"
                                  : (hedgeRecuperacao && !InpHedgeExigirFiltroEntrada
                                     ? "HEDGE_REC_SEM_EXIGIR_FILTRO"
-                                    : (filtrosOk ? "FILTROS_OK" : "FILTROS_BLOQUEARAM")));
-      RegistrarLogEntradaFiltros(estado, "FILTRO_ENTRADA_A0", "A0", janela.filtros, filtrosLiberamA0, motivoFiltroA0, true);
+                                    : (filtrosOk
+                                       ? "JANELA_E_A0_OK"
+                                       : (!filtrosJanelaOk ? "FILTRO_JANELA_BLOQUEOU" : "FILTRO_A0_BLOQUEOU"))));
+      RegistrarLogEntradaFiltros(estado, "FILTRO_JANELA_A0", "A0", janela.filtros,
+                                 (filtrosJanelaOk || (hedgeRecuperacao && !InpHedgeExigirFiltroEntrada)),
+                                 (filtrosJanelaOk ? "JANELA_OK_OU_LIVRE" : "FILTRO_JANELA_BLOQUEOU"), true);
+      RegistrarLogEntradaFiltros(estado, "FILTRO_ENTRADA_A0", "A0", filtrosEntradaA0,
+                                 filtrosLiberamA0, motivoFiltroA0, true);
       if(!filtrosOk && !(hedgeRecuperacao && !InpHedgeExigirFiltroEntrada))
       {
          RegistrarDecisaoOperacional(estado, "A0", "Entrada A0 bloqueada por filtros ST/FT da matriz.");
